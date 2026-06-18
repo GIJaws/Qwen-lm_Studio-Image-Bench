@@ -59,13 +59,17 @@ def detect_models(records):
     models = []
     prefix = "quality_response_"
     for key in first:
-        if key.startswith(prefix):
-            model_name = key[len(prefix):]
-            models.append(model_name)
+        if not key.startswith(prefix):
+            continue
+        name = key[len(prefix):]
+        if name.endswith("_en"):
+            continue
+        models.append(name)
     return models
 
 
-def compute_all_scores(records, models):
+def compute_all_scores(records, models, lang="cn"):
+    suffix = "_en" if lang == "en" else ""
     model_row_scores = {m: [] for m in models}
 
     for row in records:
@@ -73,7 +77,7 @@ def compute_all_scores(records, models):
         for model in models:
             dim_results = {}
             for prefix, dim_name in RESPONSE_PREFIX_TO_DIM.items():
-                key = prefix + model
+                key = prefix + model + suffix
                 resp = row.get(key, "")
                 if not resp:
                     continue
@@ -128,11 +132,12 @@ def aggregate_model_scores(model_row_scores):
     return results
 
 
-def print_results(agg):
+def print_results(agg, lang="cn"):
+    lang_label = "ENGLISH" if lang == "en" else "CHINESE"
     models = sorted(agg.keys(), key=lambda m: agg[m]["total"] or 0, reverse=True)
 
     print("\n" + "=" * 100)
-    print("MODEL SCORES SUMMARY (sorted by Total)")
+    print(f"MODEL SCORES SUMMARY ({lang_label}, sorted by Total)")
     print("=" * 100)
 
     header = f"{'Model':<28}"
@@ -154,7 +159,7 @@ def print_results(agg):
         print(line)
 
     print("\n" + "=" * 100)
-    print("LEVEL-2 DETAIL")
+    print(f"LEVEL-2 DETAIL ({lang_label})")
     print("=" * 100)
 
     for dim in LEVEL1_DIMS:
@@ -183,11 +188,12 @@ def print_results(agg):
     print()
 
 
-def save_results(agg, output_dir):
+def save_results(agg, output_dir, lang="cn"):
     output_dir = Path(output_dir)
+    suffix = "_en" if lang == "en" else ""
     models = sorted(agg.keys(), key=lambda m: agg[m]["total"] or 0, reverse=True)
 
-    xlsx_path = output_dir / "scores_result.xlsx"
+    xlsx_path = output_dir / f"scores_result{suffix}.xlsx"
 
     with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
         # Sheet 1: Level-1 summary
@@ -226,7 +232,7 @@ def save_results(agg, output_dir):
     print(f"Results saved to: {xlsx_path}")
 
     # Also save detail JSON
-    json_path = output_dir / "scores_detail.json"
+    json_path = output_dir / f"scores_detail{suffix}.json"
     serializable = {}
     for model in models:
         serializable[model] = {
@@ -253,15 +259,18 @@ def main():
     models = detect_models(records)
     print(f"Detected {len(models)} models: {', '.join(models)}")
 
-    print("Computing scores...")
-    model_row_scores = compute_all_scores(records, models)
-
-    agg = aggregate_model_scores(model_row_scores)
-
-    print_results(agg)
-
     output_dir = args.output_dir or (str(Path(args.input).parent) if args.input else ".")
-    save_results(agg, output_dir)
+
+    for lang in ("cn", "en"):
+        print(f"\n>>> Computing scores for [{lang.upper()}] ...")
+        if lang == "en":
+            sample_keys = records[0].keys()
+            if not any(k.startswith("quality_response_") and k.endswith("_en") for k in sample_keys):
+                print("[WARN] no '_en' response columns found in JSONL; EN pass will produce all-N/A results")
+        model_row_scores = compute_all_scores(records, models, lang=lang)
+        agg = aggregate_model_scores(model_row_scores)
+        print_results(agg, lang=lang)
+        save_results(agg, output_dir, lang=lang)
 
 
 if __name__ == "__main__":
