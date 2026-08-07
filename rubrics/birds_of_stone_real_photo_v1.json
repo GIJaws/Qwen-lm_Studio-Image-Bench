@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "id": "birds_of_stone_real_photo",
+  "version": 1,
+  "name": "Birds of Stone Real-Photo Rubric v1",
+  "classification": "custom",
+  "description": "Experimental general photographic judgment for real photographs. Intentional blur, noise, clipping, unusual colour, and unconventional framing are not defects by themselves.",
+  "dimensions": [
+    {
+      "id": "photographic_effectiveness",
+      "label": "Photographic Effectiveness",
+      "description": "How coherently and distinctively the photograph achieves a visible photographic effect.",
+      "groups": [
+        {
+          "id": "visual_structure",
+          "label": "Visual Structure",
+          "facets": [
+            {
+              "id": "visual_anchor",
+              "label": "Subject or Visual Anchor",
+              "prompt": "Does the photograph establish an intentional visual anchor, focal field, or organizing element appropriate to its degree of abstraction? The anchor may be a person, gesture, light, shape, texture, or spatial relationship."
+            },
+            {
+              "id": "composition_flow",
+              "label": "Composition and Flow",
+              "prompt": "Do framing, balance, direction, spacing, and visual movement guide attention through the frame in a coherent way?"
+            },
+            {
+              "id": "layer_separation",
+              "label": "Layer Separation",
+              "prompt": "Do foreground, subject, background, light, and overlapping forms remain sufficiently differentiated for the intended effect?"
+            }
+          ]
+        },
+        {
+          "id": "light_colour",
+          "label": "Light and Colour",
+          "facets": [
+            {
+              "id": "light_structure",
+              "label": "Light Structure",
+              "prompt": "Does visible light create useful shape, separation, rhythm, atmosphere, or emphasis rather than merely exposing the scene?"
+            },
+            {
+              "id": "colour_tonal_coherence",
+              "label": "Colour and Tonal Coherence",
+              "prompt": "Do colour, monochrome treatment, contrast, clipping, and tonal relationships form a coherent visual language appropriate to the photograph?"
+            }
+          ]
+        },
+        {
+          "id": "expressive_impact",
+          "label": "Expressive Impact",
+          "facets": [
+            {
+              "id": "energy_mood",
+              "label": "Energy and Mood",
+              "prompt": "Does the photograph communicate a clear energy, atmosphere, tension, humour, intimacy, strangeness, or emotional tone through visible choices?"
+            },
+            {
+              "id": "distinctiveness",
+              "label": "Distinctiveness",
+              "prompt": "Does the photograph contain a memorable or non-generic visual idea, moment, relationship, or treatment?"
+            }
+          ]
+        },
+        {
+          "id": "intentional_execution",
+          "label": "Intentional Execution",
+          "facets": [
+            {
+              "id": "technique_intentionality",
+              "label": "Technique Intentionality",
+              "prompt": "Do focus, motion, noise, flash, colour, clipping, depth, and framing read as controlled choices serving the image rather than arbitrary defaults?"
+            },
+            {
+              "id": "unintended_failure_control",
+              "label": "Unintended Failure Control",
+              "prompt": "Are accidental failures that undermine the visible intent sufficiently controlled? Do not count intentional blur, grain, clipping, distortion, or unconventional framing as failures by themselves."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
