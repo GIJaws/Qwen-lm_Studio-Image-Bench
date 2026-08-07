@@ -21,7 +21,7 @@ class RealPhotoProfile:
     """Immutable run-level configuration for the stock-rubric real-photo baseline."""
 
     id: str = "real-photo-stock-no-reference"
-    version: int = 1
+    version: int = 2
     name: str = "Real photograph, stock Qwen rubric, no reference text"
     actual_provenance: str = "real"
     presented_provenance: str = "real"
@@ -83,6 +83,12 @@ No generation prompt, candidate prompt, image description, or photographic-inten
 - **2 (Excel)**: Exceptionally executed. Only when concrete excellence is observable.
 - **N/A**: This criterion does not apply to this photograph or cannot be assessed without reference text.
 
+# Evidence Rules
+- Include one brief, concrete evidence statement for every facet.
+- Base evidence only on visible image content and the supplied context.
+- For N/A, state why the criterion cannot be assessed or does not apply.
+- Evidence is diagnostic metadata and does not change the official score.
+
 # Evaluation Checklist
 {checklist}
 
@@ -90,7 +96,9 @@ No generation prompt, candidate prompt, image description, or photographic-inten
 Respond with a valid JSON object only (no markdown code blocks):
 {{
   "{{level2_dim}}": {{
-    "{{level3_dim}}": {{"score": 0|1|2}},
-    "{{level3_dim}}": {{"score": "N/A"}}
+    "{{level3_dim}}": {{
+      "score": 0|1|2|"N/A",
+      "evidence": "brief concrete evidence"
+    }}
   }}
 }}"""
