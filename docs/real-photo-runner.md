@@ -1,6 +1,6 @@
 # Real-Photo Runner
 
-This branch contains the first operational slice of the real-photo prototype: deterministic JPEG folder sampling, stateless LM Studio inference, durable incremental outputs, and a deliberately small static HTML report.
+This branch contains the first operational slice of the real-photo prototype: JPEG folder sampling, stateless LM Studio inference, durable incremental outputs, and a deliberately small static HTML report.
 
 The richer ranking/filter/profile report described in the planning documents is a later slice. The canonical outputs produced now are designed so that report work will not require rerunning Q-Judger.
 
@@ -11,7 +11,10 @@ The runner currently:
 - Discovers `.jpg` and `.jpeg` files, case-insensitively
 - Searches recursively by default
 - Samples up to `N` files without replacement
-- Uses sample seed `42` by default
+- Generates a fresh 64-bit image-sampling seed from OS entropy by default
+- Accepts `--sample-seed <int>` to reproduce or choose a specific image sample
+- Keeps the LM Studio inference seed independent, with default `42`
+- Writes the effective image-sampling seed to the sample manifest
 - Writes the sample manifest before inference
 - Uses the stock Qwen checklists
 - Evaluates Quality, Aesthetics, and Creative Generation
@@ -75,22 +78,26 @@ uv run python run_real_photos.py \
 By default this will:
 
 - Search subfolders
-- Use sample seed `42`
+- Generate a fresh 64-bit sampling seed from OS entropy
 - Select at most three unique JPEGs
+- Print and record the effective sample seed
+- Keep the LM Studio inference seed at `42`
 - Preserve source aspect ratio within a `1024`-pixel long edge
 - Write output under `local/runs/`
 - Generate `report.html`
+
+To reproduce a particular image sample or choose a specific image-selection seed:
+
+```bash
+--sample-seed 42
+```
+
+The image-sampling seed is independent from the LM Studio inference seed. Changing `--sample-seed` changes which JPEGs are selected but does not change the default model seed.
 
 Disable recursive traversal with:
 
 ```bash
 --no-recursive
-```
-
-Change the deterministic sample with:
-
-```bash
---sample-seed 123
 ```
 
 Skip HTML generation with:
@@ -115,7 +122,7 @@ run-directory/
 ```
 
 - `run.json` records the immutable evaluation condition, runtime, model, preprocessing, and status.
-- `sample-manifest.json` records the source folder, seed, eligible count, selected ordered paths, and sampling method.
+- `sample-manifest.json` records the source folder, effective image-sampling seed, eligible count, selected ordered paths, and sampling method.
 - `results.jsonl` preserves one complete archival record per evaluated image.
 - `facet-scores.csv` is a long-form L3 table intended for custom charts and analysis.
 - `aggregate-scores.csv` contains L2, L1, and active-dimension aggregate rows.
@@ -126,7 +133,7 @@ These local artifacts can contain absolute source paths. The default `local/` ou
 
 ## Resume an existing run
 
-Re-run the same command with the existing run directory:
+Re-run the same command with the existing run directory. The stored manifest controls the already-selected sample, so a fresh random seed is not used to replace it:
 
 ```bash
 uv run python run_real_photos.py \
