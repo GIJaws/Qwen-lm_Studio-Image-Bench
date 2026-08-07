@@ -57,6 +57,27 @@ def main() -> int:
         args.image,
         max_long_edge=args.max_long_edge,
     )
+
+    def run_dimension(judge: LMStudioJudge, dimension: str) -> list[str]:
+        # Pillow does not document concurrent mutation/serialization of one Image
+        # object as thread-safe. Give each worker its own immutable pixel copy.
+        request_image = image.copy()
+        try:
+            return judge.generate_batch(
+                [
+                    {
+                        "system_prompt": profile.application_system_prompt,
+                        "user_text": build_real_photo_user_prompt(
+                            profile,
+                            dimension,
+                        ),
+                        "image": request_image,
+                    }
+                ]
+            )
+        finally:
+            request_image.close()
+
     try:
         print(
             f"Image prepared as {preparation.prepared_width}x"
@@ -75,19 +96,7 @@ def main() -> int:
                 max_workers=min(worker_count, len(dimensions))
             ) as executor:
                 futures = {
-                    executor.submit(
-                        judge.generate_batch,
-                        [
-                            {
-                                "system_prompt": profile.application_system_prompt,
-                                "user_text": build_real_photo_user_prompt(
-                                    profile,
-                                    dimension,
-                                ),
-                                "image": image,
-                            }
-                        ],
-                    ): dimension
+                    executor.submit(run_dimension, judge, dimension): dimension
                     for dimension in dimensions
                 }
                 for future in as_completed(futures):
