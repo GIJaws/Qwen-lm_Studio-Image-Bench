@@ -7,6 +7,7 @@ import argparse
 import secrets
 from pathlib import Path
 
+from backends.lm_studio_model_info import detect_parallel_limit
 from real_photo.profile import ALL_DIMENSIONS, RealPhotoProfile
 from real_photo.runner import RealPhotoRunSettings
 from real_photo.stateful_runner import (
@@ -78,11 +79,11 @@ def build_parser() -> argparse.ArgumentParser:
     lm.add_argument(
         "--concurrency",
         type=int,
-        default=4,
+        default=None,
         help=(
-            "Maximum branch requests simultaneously in flight (default: 4). "
-            "Additional dimensions remain queued locally and do not start their "
-            "HTTP timeout until a worker slot is available."
+            "Maximum branch requests simultaneously in flight. If omitted, read "
+            "loaded_instances[].config.parallel from LM Studio's native model-list "
+            "API. Detection failure falls back safely to 1."
         ),
     )
     lm.add_argument(
@@ -141,6 +142,33 @@ def resolve_dimensions(args: argparse.Namespace) -> tuple[str, ...]:
     return ("Quality", "Aesthetics", "Creative Generation")
 
 
+def resolve_concurrency(
+    explicit: int | None,
+    *,
+    model: str,
+    base_url: str,
+) -> int:
+    if explicit is not None:
+        if explicit < 1:
+            raise ValueError("--concurrency must be at least 1")
+        print(f"Using explicit concurrency: {explicit}")
+        return explicit
+
+    detection = detect_parallel_limit(model=model, base_url=base_url)
+    if detection.parallel is not None:
+        print(
+            "Detected LM Studio Max Concurrent Predictions: "
+            f"{detection.parallel} (instance {detection.instance_id})"
+        )
+        return detection.parallel
+
+    print(
+        "Could not detect LM Studio Max Concurrent Predictions; using safe "
+        f"concurrency 1. Detection detail: {detection.error}"
+    )
+    return 1
+
+
 def main() -> int:
     args = build_parser().parse_args()
     sample_seed = resolve_sample_seed(args.sample_seed)
@@ -148,6 +176,11 @@ def main() -> int:
         print(f"Generated image-sampling seed: {sample_seed}")
 
     dimensions = resolve_dimensions(args)
+    concurrency = resolve_concurrency(
+        args.concurrency,
+        model=args.model,
+        base_url=args.lm_studio_base_url,
+    )
     extra_body = parse_stateful_extra_body(args.lm_studio_extra_body_json)
     profile = RealPhotoProfile(
         dimensions=dimensions,
@@ -178,7 +211,7 @@ def main() -> int:
             base_max_output_tokens=args.base_max_output_tokens,
             context_length=args.context_length,
             stream_progress=not args.no_stream_progress,
-            concurrency=args.concurrency,
+            concurrency=concurrency,
             extra_body=extra_body,
         ),
         run_dir=args.run_dir,
