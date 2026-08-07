@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Evaluate a deterministic sample of local JPEG photographs through LM Studio."""
+"""Evaluate a sample of local JPEG photographs through LM Studio."""
 
 from __future__ import annotations
 
 import argparse
+import secrets
 from pathlib import Path
 
 from real_photo.runner import (
@@ -31,8 +32,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--sample-seed",
         type=int,
-        default=42,
-        help="Deterministic sampling seed (default: 42)",
+        default=None,
+        help=(
+            "Deterministic image-sampling seed. If omitted, a fresh 64-bit seed "
+            "is generated from OS entropy and recorded in the run manifest."
+        ),
     )
     parser.add_argument(
         "--no-recursive",
@@ -93,16 +97,25 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def resolve_sample_seed(explicit_seed: int | None) -> int:
+    """Return the requested seed or generate a fresh recorded sampling seed."""
+    return explicit_seed if explicit_seed is not None else secrets.randbits(64)
+
+
 def main() -> int:
     args = build_parser().parse_args()
     extra_body = parse_extra_body(args.lm_studio_extra_body_json)
     lm_seed = None if args.lm_studio_no_seed else args.lm_studio_seed
+    sample_seed = resolve_sample_seed(args.sample_seed)
+
+    if args.sample_seed is None:
+        print(f"Generated image-sampling seed: {sample_seed}")
 
     run_dir = run_real_photo_evaluation(
         settings=RealPhotoRunSettings(
             source_folder=args.folder,
             sample_count=args.sample_count,
-            sample_seed=args.sample_seed,
+            sample_seed=sample_seed,
             recursive=not args.no_recursive,
             max_long_edge=args.max_long_edge,
             html_report=not args.no_html_report,
