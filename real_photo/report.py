@@ -55,6 +55,11 @@ main {{ padding:20px 22px 48px; max-width:1800px; margin:auto; }}
 details {{ border-top:1px solid var(--border); padding-top:9px; margin-top:9px; }}
 summary {{ cursor:pointer; font-weight:600; }}
 pre {{ white-space:pre-wrap; overflow-wrap:anywhere; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:9px; font-size:11px; max-height:320px; overflow:auto; }}
+.evidence-list {{ display:grid; gap:8px; margin-top:9px; }}
+.evidence-row {{ background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:8px 9px; }}
+.evidence-head {{ display:flex; justify-content:space-between; gap:10px; font-weight:650; }}
+.evidence-path {{ color:var(--muted); font-size:11px; }}
+.evidence-text {{ margin-top:4px; }}
 a {{ color:var(--accent); }}
 .pager {{ display:flex; align-items:center; justify-content:center; gap:10px; margin:22px 0 0; }}
 .empty {{ padding:40px; text-align:center; color:var(--muted); }}
@@ -84,6 +89,7 @@ const data = JSON.parse(document.getElementById('report-data').textContent);
 let page = 0;
 let pageSize = 24;
 const scoreText = value => value == null ? 'N/A' : Number(value).toFixed(2);
+const rawScoreText = value => value == null ? 'missing' : String(value);
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
 function render() {{
   const results = data.results;
@@ -94,6 +100,26 @@ function render() {{
   document.getElementById('page-label').textContent = `Page ${{page + 1}} of ${{pageCount}}`;
   document.getElementById('previous').disabled = page === 0;
   document.getElementById('next').disabled = page + 1 >= pageCount;
+}}
+function evidencePanel(result) {{
+  const rows = [];
+  for (const [dimension,state] of Object.entries(result.dimensions || {{}})) {{
+    if (!state || state.request_status === 'not_evaluated' || !state.score_json) continue;
+    for (const [l2,facets] of Object.entries(state.score_json)) {{
+      if (!facets || typeof facets !== 'object') continue;
+      for (const [facet,value] of Object.entries(facets)) {{
+        if (!value || typeof value !== 'object' || !('score' in value)) continue;
+        rows.push({{dimension,l2,facet,score:value.score,evidence:value.evidence || ''}});
+      }}
+    }}
+  }}
+  if (!rows.some(row => row.evidence)) return '';
+  const body = rows.map(row => `<div class="evidence-row">
+    <div class="evidence-head"><span>${{escapeHtml(row.facet)}}</span><span>${{escapeHtml(rawScoreText(row.score))}}</span></div>
+    <div class="evidence-path">${{escapeHtml(row.dimension)}} / ${{escapeHtml(row.l2)}}</div>
+    <div class="evidence-text">${{escapeHtml(row.evidence || 'No evidence returned.')}}</div>
+  </div>`).join('');
+  return `<details><summary>Facet scores and evidence</summary><div class="evidence-list">${{body}}</div></details>`;
 }}
 function card(result) {{
   const official = result.official_scores || {{}};
@@ -107,6 +133,7 @@ function card(result) {{
       <div class="path">${{escapeHtml(result.source_path)}}</div>
       <div class="pills">${{pills}}</div>
       <a href="${{escapeHtml(result.source_uri)}}">Open original</a>
+      ${{evidencePanel(result)}}
       <details><summary>Official hierarchy</summary><pre>${{escapeHtml(JSON.stringify(official,null,2))}}</pre></details>
       <details><summary>Raw judge responses</summary>${{responseBlocks}}</details>
     </div>
@@ -114,9 +141,11 @@ function card(result) {{
 }}
 const run = data.run;
 const manifest = data.manifest;
+const activeDimensions = (run.evaluation_profile.dimensions || []).join(', ');
 document.getElementById('run-meta').innerHTML = [
   `Run <strong>${{escapeHtml(run.run_id)}}</strong>`,
   `Profile ${{escapeHtml(run.evaluation_profile.name)}}`,
+  `Dimensions ${{escapeHtml(activeDimensions)}}`,
   `Model ${{escapeHtml(run.model.id)}}`,
   `Seed ${{manifest.sample_seed}}`
 ].map(item => `<span>${{item}}</span>`).join('');
