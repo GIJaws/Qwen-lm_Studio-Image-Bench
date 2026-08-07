@@ -48,13 +48,9 @@ class LMStudioJudgeConfig:
 class LMStudioJudge:
     """Drop-in judge backend matching MsSwiftJudge.generate_batch().
 
-    Each input item must contain:
-      - system_prompt: str
-      - user_text: str
-      - image: PIL.Image.Image
-
-    The return value is a list of generated text strings in the same order as
-    the input items, matching the interface expected by judge.py.
+    Each input item must contain ``user_text`` and a PIL image. ``system_prompt``
+    may be a non-empty string or ``None``. A missing/empty system prompt is
+    omitted from the API request so an LM Studio model preset can own it.
     """
 
     IMAGE_MARKER = "<image>"
@@ -88,13 +84,7 @@ class LMStudioJudge:
         )
 
     def generate_batch(self, items: list[dict[str, Any]]) -> list[str]:
-        """Generate one independent LM Studio response per item.
-
-        The upstream ms-swift backend accepts a batch of independent InferRequest
-        objects. LM Studio's REST API does not expose the same in-process batch
-        primitive, so this method submits bounded-size harness batches as serial
-        HTTP requests while preserving output ordering.
-        """
+        """Generate one independent LM Studio response per item."""
         return [self._generate_one(item, index) for index, item in enumerate(items)]
 
     def _generate_one(self, item: dict[str, Any], index: int) -> str:
@@ -128,21 +118,25 @@ class LMStudioJudge:
         return self._extract_message_content(response_body, index)
 
     def _build_payload(self, item: dict[str, Any]) -> dict[str, Any]:
-        system_prompt = str(item["system_prompt"])
+        raw_system_prompt = item.get("system_prompt")
         user_text = str(item["user_text"])
         image = item["image"]
         if not isinstance(image, Image.Image):
             raise TypeError("LMStudioJudge item['image'] must be a PIL.Image.Image")
 
+        messages: list[dict[str, Any]] = []
+        if raw_system_prompt is not None and str(raw_system_prompt).strip():
+            messages.append({"role": "system", "content": str(raw_system_prompt)})
+        messages.append(
+            {
+                "role": "user",
+                "content": self._build_user_content(user_text, image),
+            }
+        )
+
         payload: dict[str, Any] = {
             "model": self.config.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": self._build_user_content(user_text, image),
-                },
-            ],
+            "messages": messages,
             "temperature": self.config.temperature,
             "top_k": self.config.top_k,
             "top_p": self.config.top_p,
@@ -163,14 +157,7 @@ class LMStudioJudge:
         user_text: str,
         image: Image.Image,
     ) -> list[dict[str, Any]]:
-        """Place the image where Qwen's prompt template emits ``<image>``.
-
-        Qwen's upstream prompt puts the image before the evaluation dimension and
-        checklist. Preserving that order keeps the LM Studio request faithful to
-        the original harness and allows repeated passes for one image to share the
-        longest possible prompt prefix. If a custom prompt omits the marker, the
-        image is appended after the text as a compatibility fallback.
-        """
+        """Place the image where Qwen's prompt template emits ``<image>``."""
         image_part: dict[str, Any] = {
             "type": "image_url",
             "image_url": {
