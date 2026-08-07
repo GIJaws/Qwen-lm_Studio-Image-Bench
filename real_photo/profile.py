@@ -34,6 +34,7 @@ class RealPhotoProfile:
     system_instruction_source: str = "lm_studio_preset"
     application_system_prompt: str | None = None
     dimensions: tuple[str, ...] = DEFAULT_REAL_PHOTO_DIMENSIONS
+    include_evidence: bool = True
 
     def validate(self) -> None:
         unknown = [dimension for dimension in self.dimensions if dimension not in DIM_TO_CHECKLIST]
@@ -49,10 +50,15 @@ class RealPhotoProfile:
         enabled = set(self.dimensions)
         return tuple(dimension for dimension in ALL_DIMENSIONS if dimension not in enabled)
 
+    @property
+    def output_schema_id(self) -> str:
+        return "score_evidence_v1" if self.include_evidence else "qwen_score_only_v1"
+
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["dimensions"] = list(self.dimensions)
         data["disabled_dimensions"] = list(self.disabled_dimensions)
+        data["output_schema_id"] = self.output_schema_id
         return data
 
 
@@ -65,6 +71,31 @@ def build_real_photo_user_prompt(profile: RealPhotoProfile, level1_dimension: st
         )
 
     checklist = DIM_TO_CHECKLIST[level1_dimension]
+    if profile.include_evidence:
+        evidence_rules = """
+# Evidence Rules
+- Include one brief, concrete evidence statement for every facet.
+- Base evidence only on visible image content and the supplied context.
+- For N/A, state why the criterion cannot be assessed or does not apply.
+- Evidence is diagnostic metadata and does not change the official score.
+"""
+        output_format = """{
+  "{level2_dim}": {
+    "{level3_dim}": {
+      "score": 0|1|2|"N/A",
+      "evidence": "brief concrete evidence"
+    }
+  }
+}"""
+    else:
+        evidence_rules = ""
+        output_format = """{
+  "{level2_dim}": {
+    "{level3_dim}": {"score": 0|1|2},
+    "{level3_dim}": {"score": "N/A"}
+  }
+}"""
+
     return f"""# Image Provenance
 This is a real photograph. It was not generated from a text prompt.
 
@@ -82,23 +113,10 @@ No generation prompt, candidate prompt, image description, or photographic-inten
 - **1 (Pass)**: No defect. Meets baseline expectations.
 - **2 (Excel)**: Exceptionally executed. Only when concrete excellence is observable.
 - **N/A**: This criterion does not apply to this photograph or cannot be assessed without reference text.
-
-# Evidence Rules
-- Include one brief, concrete evidence statement for every facet.
-- Base evidence only on visible image content and the supplied context.
-- For N/A, state why the criterion cannot be assessed or does not apply.
-- Evidence is diagnostic metadata and does not change the official score.
-
+{evidence_rules}
 # Evaluation Checklist
 {checklist}
 
 # Output Format
 Respond with a valid JSON object only (no markdown code blocks):
-{{
-  "{{level2_dim}}": {{
-    "{{level3_dim}}": {{
-      "score": 0|1|2|"N/A",
-      "evidence": "brief concrete evidence"
-    }}
-  }}
-}}"""
+{output_format}"""
