@@ -17,7 +17,7 @@ from score_utils import (
 from .profile import ALL_DIMENSIONS, RealPhotoProfile
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def canonical_json(value: Any) -> str:
@@ -124,14 +124,34 @@ def build_result_record(
     return record
 
 
-def _lookup_raw_score(score_json: dict[str, Any], l2: str, facet: str) -> Any:
+def _lookup_score_object(
+    score_json: dict[str, Any],
+    l2: str,
+    facet: str,
+) -> dict[str, Any] | None:
     l2_values = score_json.get(l2)
     if not isinstance(l2_values, dict):
         return None
     score_object = l2_values.get(facet)
-    if isinstance(score_object, dict):
+    return score_object if isinstance(score_object, dict) else None
+
+
+def _lookup_raw_score(score_json: dict[str, Any], l2: str, facet: str) -> Any:
+    score_object = _lookup_score_object(score_json, l2, facet)
+    if score_object is not None:
         return score_object.get("score")
-    return score_object
+    l2_values = score_json.get(l2)
+    if isinstance(l2_values, dict):
+        return l2_values.get(facet)
+    return None
+
+
+def _lookup_evidence(score_json: dict[str, Any], l2: str, facet: str) -> str | None:
+    score_object = _lookup_score_object(score_json, l2, facet)
+    if score_object is None:
+        return None
+    evidence = score_object.get("evidence")
+    return evidence if isinstance(evidence, str) and evidence.strip() else None
 
 
 def facet_rows(record: dict[str, Any], profile: RealPhotoProfile) -> list[dict[str, Any]]:
@@ -148,6 +168,7 @@ def facet_rows(record: dict[str, Any], profile: RealPhotoProfile) -> list[dict[s
         for facet, l2 in CHECKLIST_L3_TO_L2[l1].items():
             raw_score: Any = None
             mapped_score: float | None = None
+            evidence: str | None = None
             if l1 not in active:
                 applicability = "not_evaluated"
             elif request_status == "request_failed":
@@ -156,6 +177,7 @@ def facet_rows(record: dict[str, Any], profile: RealPhotoProfile) -> list[dict[s
                 applicability = "parse_failed"
             else:
                 raw_score = _lookup_raw_score(score_json, l2, facet)
+                evidence = _lookup_evidence(score_json, l2, facet)
                 if raw_score is None:
                     applicability = "missing"
                 elif isinstance(raw_score, str) and raw_score.upper() == "N/A":
@@ -193,6 +215,7 @@ def facet_rows(record: dict[str, Any], profile: RealPhotoProfile) -> list[dict[s
                     "facet_label": facet,
                     "raw_score": raw_score,
                     "mapped_score": mapped_score,
+                    "evidence": evidence,
                     "applicability": applicability,
                     "parse_status": parse_status,
                     "request_status": request_status,
@@ -323,7 +346,8 @@ FACET_FIELDNAMES = [
     "presented_provenance", "reference_id", "reference_digest",
     "reference_actual_role", "reference_presented_role", "l1_id", "l1_label",
     "l2_id", "l2_label", "facet_id", "facet_concept_id", "facet_label",
-    "raw_score", "mapped_score", "applicability", "parse_status", "request_status",
+    "raw_score", "mapped_score", "evidence", "applicability", "parse_status",
+    "request_status",
 ]
 
 AGGREGATE_FIELDNAMES = [
