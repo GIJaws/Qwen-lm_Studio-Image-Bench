@@ -57,6 +57,8 @@ class LMStudioJudge:
     the input items, matching the interface expected by judge.py.
     """
 
+    IMAGE_MARKER = "<image>"
+
     def __init__(
         self,
         model: str,
@@ -138,15 +140,7 @@ class LMStudioJudge:
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": [
-                        {"type": "text", "text": user_text},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": self._encode_image_url(image),
-                            },
-                        },
-                    ],
+                    "content": self._build_user_content(user_text, image),
                 },
             ],
             "temperature": self.config.temperature,
@@ -163,6 +157,41 @@ class LMStudioJudge:
             payload.update(self.config.extra_body)
 
         return payload
+
+    def _build_user_content(
+        self,
+        user_text: str,
+        image: Image.Image,
+    ) -> list[dict[str, Any]]:
+        """Place the image where Qwen's prompt template emits ``<image>``.
+
+        Qwen's upstream prompt puts the image before the evaluation dimension and
+        checklist. Preserving that order keeps the LM Studio request faithful to
+        the original harness and allows repeated passes for one image to share the
+        longest possible prompt prefix. If a custom prompt omits the marker, the
+        image is appended after the text as a compatibility fallback.
+        """
+        image_part: dict[str, Any] = {
+            "type": "image_url",
+            "image_url": {
+                "url": self._encode_image_url(image),
+            },
+        }
+
+        if self.IMAGE_MARKER not in user_text:
+            return [
+                {"type": "text", "text": user_text},
+                image_part,
+            ]
+
+        before_image, after_image = user_text.split(self.IMAGE_MARKER, 1)
+        content: list[dict[str, Any]] = []
+        if before_image:
+            content.append({"type": "text", "text": before_image})
+        content.append(image_part)
+        if after_image:
+            content.append({"type": "text", "text": after_image})
+        return content
 
     def _encode_image_url(self, image: Image.Image) -> str:
         buf = io.BytesIO()
