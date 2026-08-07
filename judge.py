@@ -1,8 +1,9 @@
 """
 Qwen-Image-Bench Judge Model Inference Tool
 
-Evaluate text-to-image generated images using a fine-tuned Qwen3.6-27B judge model.
-Uses ms-swift PtEngine for batch inference.
+Evaluate text-to-image generated images using a fine-tuned Qwen3.6-27B judge
+model. The harness builds one independent request per image and level-1
+dimension, then parses and aggregates the returned structured scores.
 
 Per-row output preserves all original input fields plus:
   - judge_model_output: combined raw scores JSON across all L1 dimensions
@@ -110,7 +111,7 @@ def load_bench_metadata(hf_bench_repo=None, local_metadata=None):
 
 
 def _parse_output_to_scores(output_text, level1_dim):
-    """Parse raw judge model output → fixed score_json. Returns None on failure."""
+    """Parse raw judge model output -> fixed score_json. Returns None on failure."""
     score_json = extract_json_from_response(output_text)
     if score_json is None:
         return None
@@ -212,6 +213,43 @@ def run_ms_swift_inference(args, input_df, metadata_df):
     return _run_batch_inference(judge, args, input_df, metadata_df, desc="Batch inference")
 
 
+def run_lm_studio_inference(args, input_df, metadata_df):
+    """Run inference through LM Studio's stateless chat-completions API."""
+    from backends.lm_studio_backend import LMStudioJudge
+
+    extra_body = _parse_extra_body_json(args.lm_studio_extra_body_json)
+    seed = None if args.lm_studio_no_seed else args.lm_studio_seed
+
+    print(f"Using LM Studio backend at: {args.lm_studio_base_url}")
+    print(f"Using LM Studio model identifier: {args.model}")
+    judge = LMStudioJudge(
+        model=args.model,
+        base_url=args.lm_studio_base_url,
+        max_new_tokens=args.max_new_tokens,
+        temperature=args.lm_studio_temperature,
+        top_k=args.lm_studio_top_k,
+        top_p=args.lm_studio_top_p,
+        repeat_penalty=args.lm_studio_repeat_penalty,
+        seed=seed,
+        timeout_seconds=args.lm_studio_timeout,
+        image_format=args.lm_studio_image_format,
+        extra_body=extra_body,
+    )
+    return _run_batch_inference(judge, args, input_df, metadata_df, desc="LM Studio inference")
+
+
+def _parse_extra_body_json(raw):
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"--lm-studio-extra-body-json is not valid JSON: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("--lm-studio-extra-body-json must decode to a JSON object")
+    return parsed
+
+
 def _empty_result(row):
     """Build an empty result row for skipped entries."""
     result = dict(row)
@@ -273,7 +311,7 @@ def _safe_mean(xs):
 def compute_bench_scores(all_dim_raw_scores):
     """
     Bench-level aggregation following compute_scores.py methodology:
-      per-row L3→L2→L1→Total nested averaging,
+      per-row L3->L2->L1->Total nested averaging,
       then arithmetic mean across rows (None values skipped).
     """
     l1_accum = defaultdict(list)
@@ -361,12 +399,50 @@ def main():
         description="Qwen-Image-Bench Judge Model Inference Tool"
     )
     parser.add_argument("--input", required=True, help="Input CSV/JSON/JSONL with ID, prompt, image_path")
-    parser.add_argument("--model", required=True, help="HuggingFace model ID or local model path")
+    parser.add_argument("--model", required=True, help="HuggingFace/local model path or LM Studio model identifier")
+    parser.add_argument(
+        "--backend",
+        choices=("ms-swift", "lm-studio"),
+        default="ms-swift",
+        help="Inference backend to use (default: ms-swift)",
+    )
     parser.add_argument("--hf-bench-repo", default=None, help="HF dataset repo for bench metadata")
     parser.add_argument("--local-metadata", default=None, help="Local metadata file path (skip HF download)")
     parser.add_argument("--max-batch-size", type=int, default=24,
-                        help="ms-swift PtEngine max_batch_size (default: 24)")
+                        help="Harness batch size / ms-swift PtEngine max_batch_size (default: 24)")
     parser.add_argument("--max-new-tokens", type=int, default=4096)
+
+    lm_group = parser.add_argument_group("LM Studio backend")
+    lm_group.add_argument(
+        "--lm-studio-base-url",
+        default="http://localhost:1234/v1",
+        help="LM Studio OpenAI-compatible base URL (default: http://localhost:1234/v1)",
+    )
+    lm_group.add_argument("--lm-studio-timeout", type=float, default=300.0,
+                          help="Per-request timeout in seconds (default: 300)")
+    lm_group.add_argument("--lm-studio-temperature", type=float, default=0.0,
+                          help="LM Studio temperature (default: 0)")
+    lm_group.add_argument("--lm-studio-top-k", type=int, default=1,
+                          help="LM Studio top_k (default: 1)")
+    lm_group.add_argument("--lm-studio-top-p", type=float, default=1.0,
+                          help="LM Studio top_p (default: 1.0)")
+    lm_group.add_argument("--lm-studio-repeat-penalty", type=float, default=1.05,
+                          help="LM Studio repeat_penalty (default: 1.05)")
+    lm_group.add_argument("--lm-studio-seed", type=int, default=42,
+                          help="LM Studio seed when supported (default: 42)")
+    lm_group.add_argument("--lm-studio-no-seed", action="store_true",
+                          help="Omit seed from LM Studio requests")
+    lm_group.add_argument(
+        "--lm-studio-image-format",
+        choices=("PNG", "JPEG", "WEBP"),
+        default="PNG",
+        help="Format used for inline image payloads sent to LM Studio (default: PNG)",
+    )
+    lm_group.add_argument(
+        "--lm-studio-extra-body-json",
+        default=None,
+        help="Optional JSON object merged into each LM Studio request body",
+    )
 
     args = parser.parse_args()
     args.batch_size = args.max_batch_size
@@ -390,7 +466,14 @@ def main():
     print(f"Metadata: {len(metadata_df)} rows")
 
     # Run inference
-    results, parse_failures, all_dim_raw_scores, image_failures = run_ms_swift_inference(args, input_df, metadata_df)
+    if args.backend == "ms-swift":
+        results, parse_failures, all_dim_raw_scores, image_failures = run_ms_swift_inference(
+            args, input_df, metadata_df
+        )
+    else:
+        results, parse_failures, all_dim_raw_scores, image_failures = run_lm_studio_inference(
+            args, input_df, metadata_df
+        )
 
     # Save per-row JSONL
     saved_path = save_output(results, args.input)

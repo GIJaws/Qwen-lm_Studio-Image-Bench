@@ -19,6 +19,7 @@ An evaluation toolkit for text-to-image (T2I) generation models. It uses a fine-
 - **Evaluate any T2I model** — run the judge model on your own generated images and get structured, multi-dimensional scores
 - **Compute scores from pre-generated responses** — reproduce the leaderboard from the released benchmark dataset
 - **Powered by ms-swift** — uses the same inference setup that produced the benchmark responses
+- **Optional LM Studio backend** — route the existing judge harness to a locally served MLX model through LM Studio's OpenAI-compatible `/v1/chat/completions` API
 
 ## Quick Start
 
@@ -32,7 +33,7 @@ uv venv myenv --python 3.11 && source myenv/bin/activate
 # Install PyTorch first: https://pytorch.org/get-started/locally/
 uv pip install -r requirements.txt
 
-# 3. Run judge on your images
+# 3. Run judge on your images with the upstream ms-swift backend
 python judge.py \
   --input your_data.jsonl \
   --model Qwen/Qwen-Image-Bench
@@ -76,7 +77,7 @@ This installs all required dependencies including ms-swift.
 
 ### Evaluate Your Own T2I Model (`judge.py`)
 
-#### Run Judge Inference
+#### Run Judge Inference with ms-swift
 
 ```bash
 python judge.py \
@@ -84,16 +85,55 @@ python judge.py \
   --model Qwen/Qwen-Image-Bench
 ```
 
+#### Run Judge Inference with LM Studio
+
+Start LM Studio as a local server, load the Qwen-Image-Bench-compatible model in LM Studio, then use the model identifier shown by LM Studio:
+
+```bash
+python judge.py \
+  --backend lm-studio \
+  --input your_data.jsonl \
+  --model "your-lm-studio-model-identifier" \
+  --lm-studio-base-url http://localhost:1234/v1
+```
+
+The LM Studio backend preserves the upstream harness semantics: every `(image, level-1 dimension)` task is sent as an independent single-turn `/v1/chat/completions` request. It does not reuse conversation state across Quality, Aesthetics, Alignment, Real-world Fidelity, or Creative Generation passes.
+
+By default, the backend sends image inputs as inline PNG data URLs and uses the same deterministic sampling values as the upstream harness where LM Studio exposes matching request fields: `temperature=0`, `top_k=1`, `top_p=1.0`, `repeat_penalty=1.05`, `seed=42`, and `max_tokens=4096`.
+
+For LM Studio-specific request fields that are not first-class CLI arguments, pass a JSON object that will be merged into every request body:
+
+```bash
+python judge.py \
+  --backend lm-studio \
+  --input your_data.jsonl \
+  --model "your-lm-studio-model-identifier" \
+  --lm-studio-extra-body-json '{"response_format":{"type":"json_object"}}'
+```
+
+That option is intentionally explicit so the default path remains close to Qwen's original prompt-and-parse workflow.
+
 #### CLI Options
 
 | Argument | Default | Description |
 |----------|---------|-------------|
 | `--input` | *(required)* | Input CSV/JSON/JSONL with `ID`, `prompt`, `image_path` |
-| `--model` | *(required)* | HuggingFace model ID or local path |
+| `--model` | *(required)* | HuggingFace/local model path for `ms-swift`, or LM Studio model identifier for `lm-studio` |
+| `--backend` | `ms-swift` | Inference backend: `ms-swift` or `lm-studio` |
 | `--hf-bench-repo` | — | HF dataset repo for bench metadata |
 | `--local-metadata` | — | Local metadata file path (overrides default) |
-| `--max-batch-size` | 24 | ms-swift `PtEngine` max_batch_size |
+| `--max-batch-size` | 24 | Harness batch size; also ms-swift `PtEngine` max_batch_size |
 | `--max-new-tokens` | 4096 | Max generation tokens |
+| `--lm-studio-base-url` | `http://localhost:1234/v1` | LM Studio OpenAI-compatible base URL |
+| `--lm-studio-timeout` | 300 | Per-request timeout in seconds |
+| `--lm-studio-temperature` | 0 | LM Studio temperature |
+| `--lm-studio-top-k` | 1 | LM Studio top_k |
+| `--lm-studio-top-p` | 1.0 | LM Studio top_p |
+| `--lm-studio-repeat-penalty` | 1.05 | LM Studio repeat_penalty |
+| `--lm-studio-seed` | 42 | LM Studio seed when supported |
+| `--lm-studio-no-seed` | false | Omit the `seed` field from LM Studio requests |
+| `--lm-studio-image-format` | `PNG` | Inline image payload format: `PNG`, `JPEG`, or `WEBP` |
+| `--lm-studio-extra-body-json` | — | JSON object merged into each LM Studio request body |
 
 #### Output Files
 
@@ -134,7 +174,7 @@ Full results for all 18 models are available in the paper.
 
 ## Inference Parameters
 
-The judge model uses fixed inference parameters for reproducibility:
+The upstream judge model uses fixed inference parameters for reproducibility:
 
 | Parameter | Value |
 |-----------|-------|
@@ -147,21 +187,26 @@ The judge model uses fixed inference parameters for reproducibility:
 | `enable_thinking` | True |
 | `max_batch_size` | 24 |
 
+The LM Studio backend sends the matching OpenAI-compatible fields exposed by LM Studio. Runtime-specific fields that are not standardized for `/v1/chat/completions` can be supplied with `--lm-studio-extra-body-json`.
+
 
 ## Project Structure
 
 ```
 .
-├── judge.py                 # Run judge model inference on new images
-├── compute_scores.py        # Compute scores from pre-generated responses
-├── score_utils.py           # Score extraction, mapping, correction, aggregation
-├── checklists.py            # Evaluation prompts and dimension definitions
+├── judge.py                     # Run judge model inference on new images
+├── compute_scores.py            # Compute scores from pre-generated responses
+├── score_utils.py               # Score extraction, mapping, correction, aggregation
+├── checklists.py                # Evaluation prompts and dimension definitions
 ├── backends/
-│   └── ms_swift_backend.py  # ms-swift inference engine
+│   ├── ms_swift_backend.py      # ms-swift inference engine
+│   └── lm_studio_backend.py     # LM Studio OpenAI-compatible inference backend
 ├── metadata/
-│   └── bench_metadata.json  # ID → dims_en metadata for judge inference
+│   └── bench_metadata.json      # ID → dims_en metadata for judge inference
+├── tests/
+│   └── test_lm_studio_backend.py
 ├── requirements.txt
-└── assets/                  # Figures for documentation
+└── assets/                      # Figures for documentation
 ```
 
 

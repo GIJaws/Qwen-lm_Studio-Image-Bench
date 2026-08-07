@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.log
+
+# Local model weights and caches
+models/
+*.safetensors
+*.gguf
+*.bin
+*.onnx
+*.mlmodel*
+
+# Local datasets, scratch runs, and generated judge outputs
+local/
+scratch/
+tmp/
+outputs/
+*_judged.csv
+*_judged.json
+*_judged.jsonl
+*_bench_scores.json
+*_bench_scores.xlsx
+scores_result.xlsx
+scores_detail.json
+*.sqlite
+*.sqlite3
+*.db
+
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/
