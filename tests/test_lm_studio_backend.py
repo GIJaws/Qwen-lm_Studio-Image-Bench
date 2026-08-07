@@ -77,6 +77,29 @@ class LMStudioJudgeTests(unittest.TestCase):
             )
         )
 
+    def test_build_payload_omits_empty_application_system_prompt(self):
+        judge = LMStudioJudge(model="qwen-image-bench-test")
+        payload = judge._build_payload({
+            "system_prompt": None,
+            "user_text": "before image\n<image>\nafter image",
+            "image": Image.new("RGB", (2, 3), "white"),
+        })
+
+        self.assertEqual(
+            [message["role"] for message in payload["messages"]],
+            ["user"],
+        )
+        user_content = payload["messages"][0]["content"]
+        self.assertEqual(
+            user_content[0],
+            {"type": "text", "text": "before image\n"},
+        )
+        self.assertEqual(user_content[1]["type"], "image_url")
+        self.assertEqual(
+            user_content[2],
+            {"type": "text", "text": "\nafter image"},
+        )
+
     def test_generate_batch_returns_outputs_in_request_order(self):
         judge = LMStudioJudge(model="qwen-image-bench-test")
         items = [

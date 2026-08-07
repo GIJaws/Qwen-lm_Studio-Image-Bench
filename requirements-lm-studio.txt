@@ -1,0 +1,2 @@
+# Minimal dependencies for the LM Studio backend and real-photo runner.
+Pillow==11.3.0
