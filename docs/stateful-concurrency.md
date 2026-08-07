@@ -44,19 +44,34 @@ implementation of the stock stateless harness.
 
 ## Bounded concurrency
 
-`--concurrency 4` means no more than four branch HTTP requests are running at
-once.
+When `--concurrency` is omitted, the CLI calls `GET /api/v1/models`, locates the
+loaded model instance, and reads:
 
-Dimensions beyond the limit remain queued in the local Python executor. They do
-not reach LM Studio, and their HTTP timeout does not begin, until a worker slot
-becomes available.
+```text
+loaded_instances[].config.parallel
+```
+
+For Jacob's current LM Studio configuration this should resolve to `4`.
+The detected value is printed before inference starts.
+
+An explicit override remains available:
+
+```bash
+--concurrency 4
+```
+
+No more than that number of branch HTTP requests run at once. Dimensions beyond
+the limit remain queued in the local Python executor. They do not reach LM
+Studio, and their HTTP timeout does not begin, until a worker slot becomes
+available.
+
+If model-list detection fails or the loaded instance does not expose a positive
+`config.parallel`, the runner falls back safely to concurrency `1` and prints the
+detection error. An explicit `--concurrency` bypasses detection.
 
 The runner currently finishes one image's branch set before creating the shared
 context for the next image. This keeps checkpointing and state ownership simple.
 Global cross-image scheduling can be considered after the first measurements.
-
-LM Studio's Max Concurrent Predictions setting is not automatically discovered.
-Use the same or a lower value in `--concurrency`.
 
 ## Streaming
 
@@ -122,7 +137,7 @@ uv run --active python benchmark_lm_studio_concurrency.py \
 
 The script sends all five stock L1 requests in each test. It uses a locally
 bounded executor, so a worker count of four creates at most four active HTTP
-requests.
+requests. Each worker receives its own Pillow image copy before serialization.
 
 Compare the wall times:
 
@@ -146,9 +161,11 @@ uv run --active python run_stateful_photos.py \
   --dimension "Quality" \
   --dimension "Aesthetics" \
   --model "qwen-image-bench-mlx" \
-  --concurrency 4 \
   --lm-studio-timeout 900
 ```
+
+The CLI will normally detect the loaded model's configured parallel limit. Pass
+`--concurrency 4` only when you want to override or bypass detection.
 
 To run all five stock dimensions:
 
