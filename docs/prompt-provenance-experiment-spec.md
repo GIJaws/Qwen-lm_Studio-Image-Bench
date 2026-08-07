@@ -140,37 +140,152 @@ For the current photography corpus, this is always `real`.
 - `icm_aware`
 - Other explicitly versioned custom rubric
 
-## 5. Recommended stored schema
+## 5. Run-level consistency and request isolation
+
+### 5.1 One coherent condition per run
+
+An evaluation run selects one immutable evaluation profile before inference starts. The profile applies to every sampled image and every active L1-dimension request in that run.
+
+The following are run-level settings and must not vary per image or per L1 dimension:
+
+- Presented image provenance
+- Reference-text presence policy
+- Reference-text source class
+- Actual reference-text role
+- Presented reference-text role
+- Reference framing-template ID and version
+- Rubric family and version
+- System-instruction source/mode
+- Active L1 dimensions
+- Model/runtime and inference settings
+
+Per-image reference text may contain different text because each photograph is different, but every image in the run must use the same source/role/framing rules. For example, a run may use one frozen inferred candidate prompt per image, with every prompt presented as a `possible_generation_prompt`.
+
+Do not silently fall back to another condition. If a run requires reference text and one image has no valid frozen reference text, that image should fail or be skipped with an explicit status rather than being evaluated under a no-reference condition.
+
+### 5.2 No mixed rubric family inside a run
+
+A run must use one coherent rubric variant across all active L1 dimensions.
+
+Examples:
+
+- A `qwen_stock` run uses stock Qwen wording for every active dimension.
+- A `real_photo_adapted` run uses real-photo-adapted wording for every active dimension.
+- An `icm_aware` run uses the selected ICM-aware rubric family for every active dimension it defines.
+
+Do not run stock Quality, adapted Aesthetics, and ICM-aware Creative Generation together as one normal run. If the selected rubric family does not define one of the requested dimensions, validation should fail instead of falling back to another rubric family.
+
+A deliberately mixed one-off experiment can still be performed manually at a lower level, but it must not be represented as a normal homogeneous run.
+
+### 5.3 Separate runs for separate conditions
+
+Changing any experimental variant creates a new run. Do not mix real-photo, AI-presented, uncertain-provenance, prompt-present, and prompt-absent conditions within one run.
+
+Comparisons should reuse the same sample manifest or explicit image list so the image cohort remains fixed while the run-level condition changes.
+
+Examples:
+
+```text
+Run A: presented as real, no reference, stock rubric
+Run B: presented as AI-generated, no reference, stock rubric
+Run C: provenance uncertain, inferred prompt presented as possible, stock rubric
+Run D: presented as real, no reference, real-photo-adapted rubric
+```
+
+### 5.4 L1 dimensions are logically isolated
+
+Each active L1 dimension is evaluated as an independent stateless request containing:
+
+- The same run-level profile condition
+- The same image
+- The same per-image frozen reference text, when the run uses one
+- Only the dimension-specific checklist/output request needed for that L1 pass
+
+No Quality result is passed into Aesthetics, no Aesthetics result is passed into Creative Generation, and no dimension can see another dimension's output.
+
+The backend may execute requests serially, concurrently, or in batches. That is a scheduling detail. The experimental requirement is logical isolation and no conversation-history chaining.
+
+### 5.5 Run identity must make variants obvious
+
+Every run manifest and report header must expose the selected condition without requiring inspection of raw prompts.
+
+Minimum visible identity fields:
+
+- Run ID
+- Evaluation profile ID and version
+- Actual provenance
+- Presented provenance
+- Reference source
+- Actual reference role
+- Presented reference role
+- Reference framing-template ID/version
+- Rubric ID/version/classification
+- System-instruction source
+- Active dimensions
+- Model/runtime/API mode
+- Sample-manifest ID
+
+The run should also store a stable condition signature or digest derived from the normalized run-level profile. Every per-image result references the run/profile identity rather than independently selecting variants.
+
+## 6. Recommended stored schema
 
 ```json
 {
+  "run_id": "run-stable-id",
+  "sample_manifest_id": "sample-stable-id",
+  "evaluation_profile": {
+    "id": "uncertain-similar-prompt-stock",
+    "version": 1,
+    "condition_digest": "sha256-of-normalized-run-profile"
+  },
   "actual_provenance": "real",
   "presented_provenance": "uncertain",
-  "reference": {
-    "id": "reference-text-stable-id",
-    "digest": "sha256-of-exact-text",
+  "reference_policy": {
     "source": "q_judger_inferred",
     "actual_role": "inferred_candidate_generation_prompt",
     "presented_role": "similar_image_prompt",
-    "text": "A musician under saturated red stage lights...",
-    "framing_template_id": "similar-image-uncertain-v1"
+    "framing_template_id": "similar-image-uncertain-v1",
+    "required": true
   },
   "rubric": {
     "id": "qwen_stock",
-    "version": "upstream"
-  }
+    "version": "upstream",
+    "classification": "official"
+  },
+  "system_instructions": {
+    "source": "lm_studio_preset"
+  },
+  "dimensions": [
+    "Quality",
+    "Aesthetics",
+    "Creative Generation"
+  ],
+  "model": {
+    "runtime": "lm_studio",
+    "api_mode": "stateless"
+  },
+  "image_results": [
+    {
+      "image_id": "image-stable-id",
+      "reference": {
+        "id": "reference-text-stable-id",
+        "digest": "sha256-of-exact-text",
+        "text": "A musician under saturated red stage lights..."
+      }
+    }
+  ]
 }
 ```
 
 The report should show both the actual and presented roles so deliberately misleading conditions remain auditable.
 
-## 6. Suggested staged comparison
+## 7. Suggested staged comparison
 
 Do not run the complete cross-product initially.
 
 ### Stage A: Reference-role effect
 
-Hold presented provenance fixed and compare:
+Hold presented provenance fixed and compare separate runs:
 
 1. No reference text
 2. Neutral description
@@ -182,7 +297,7 @@ Use the same frozen text for conditions 2 through 5 where meaningful.
 
 ### Stage B: Provenance-framing effect
 
-Hold reference text and presented role fixed and compare:
+Hold reference text and presented role fixed and compare separate runs:
 
 1. Provenance omitted
 2. Explicitly real
@@ -195,9 +310,9 @@ Run a small selected subset of combinations that appeared most informative in St
 
 ### Stage D: Rubric wording
 
-Compare stock Qwen wording with a real-photo-adapted rubric while holding provenance and reference framing fixed.
+Compare stock Qwen wording with a real-photo-adapted rubric in separate runs while holding provenance and reference framing fixed.
 
-## 7. Reporting requirements
+## 8. Reporting requirements
 
 A future multi-run comparison report should support:
 
@@ -211,12 +326,14 @@ A future multi-run comparison report should support:
 - Exact frozen reference text and digest
 - Rubric/version
 - Model/runtime/version
+- Condition digest
+- Explicit confirmation that each run is internally homogeneous
 
-## 8. Scope boundary
+## 9. Scope boundary
 
 This specification does not add work to the first usable real-photo milestone.
 
-The first baseline remains:
+The first baseline remains one coherent run:
 
 - Actual provenance: real
 - Presented provenance: real
