@@ -7,6 +7,7 @@ import argparse
 import secrets
 from pathlib import Path
 
+from real_photo.profile import ALL_DIMENSIONS, DEFAULT_REAL_PHOTO_DIMENSIONS, RealPhotoProfile
 from real_photo.runner import (
     LMStudioSettings,
     RealPhotoRunSettings,
@@ -36,6 +37,30 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Deterministic image-sampling seed. If omitted, a fresh 64-bit seed "
             "is generated from OS entropy and recorded in the run manifest."
+        ),
+    )
+    parser.add_argument(
+        "--dimension",
+        dest="dimensions",
+        action="append",
+        choices=ALL_DIMENSIONS,
+        default=None,
+        help=(
+            "Stock Qwen L1 dimension to evaluate. Repeat to select multiple. "
+            "If omitted, defaults to: " + ", ".join(DEFAULT_REAL_PHOTO_DIMENSIONS)
+        ),
+    )
+    parser.add_argument(
+        "--all-dimensions",
+        action="store_true",
+        help="Evaluate all five stock Qwen L1 dimensions",
+    )
+    parser.add_argument(
+        "--no-evidence",
+        action="store_true",
+        help=(
+            "Request the original score-only JSON shape instead of adding one "
+            "brief evidence string per facet"
         ),
     )
     parser.add_argument(
@@ -102,14 +127,50 @@ def resolve_sample_seed(explicit_seed: int | None) -> int:
     return explicit_seed if explicit_seed is not None else secrets.randbits(64)
 
 
+def resolve_dimensions(
+    explicit_dimensions: list[str] | None,
+    *,
+    use_all_dimensions: bool,
+) -> tuple[str, ...]:
+    """Resolve one homogeneous set of stock Qwen L1 dimensions for the run."""
+    if explicit_dimensions and use_all_dimensions:
+        raise ValueError("--dimension and --all-dimensions cannot be used together")
+    if use_all_dimensions:
+        return tuple(ALL_DIMENSIONS)
+    if explicit_dimensions:
+        return tuple(dict.fromkeys(explicit_dimensions))
+    return tuple(DEFAULT_REAL_PHOTO_DIMENSIONS)
+
+
 def main() -> int:
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args = parser.parse_args()
     extra_body = parse_extra_body(args.lm_studio_extra_body_json)
     lm_seed = None if args.lm_studio_no_seed else args.lm_studio_seed
     sample_seed = resolve_sample_seed(args.sample_seed)
 
+    try:
+        dimensions = resolve_dimensions(
+            args.dimensions,
+            use_all_dimensions=args.all_dimensions,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
+
     if args.sample_seed is None:
         print(f"Generated image-sampling seed: {sample_seed}")
+
+    profile_name = "Real photograph, stock Qwen rubric, no reference text"
+    if dimensions != DEFAULT_REAL_PHOTO_DIMENSIONS:
+        profile_name += " · " + ", ".join(dimensions)
+    if not args.no_evidence:
+        profile_name += " · per-facet evidence"
+
+    profile = RealPhotoProfile(
+        name=profile_name,
+        dimensions=dimensions,
+        include_evidence=not args.no_evidence,
+    )
 
     run_dir = run_real_photo_evaluation(
         settings=RealPhotoRunSettings(
@@ -135,6 +196,7 @@ def main() -> int:
         ),
         run_dir=args.run_dir,
         output_root=args.output_root,
+        profile=profile,
     )
 
     print(f"Run directory: {run_dir}")
