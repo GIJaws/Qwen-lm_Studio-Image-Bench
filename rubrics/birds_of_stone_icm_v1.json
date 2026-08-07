@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "id": "birds_of_stone_icm",
+  "version": 1,
+  "name": "Birds of Stone Intentional Camera Movement Rubric v1",
+  "classification": "custom",
+  "description": "Experimental rubric for photographs using intentional camera movement, slow-shutter trails, flash-drag, zoom, or related motion techniques. Blur and distortion are evaluated as design material rather than automatic defects.",
+  "dimensions": [
+    {
+      "id": "intentional_motion",
+      "label": "Intentional Motion",
+      "description": "How successfully motion, retained detail, light, and subject information combine into an intentional photographic result.",
+      "groups": [
+        {
+          "id": "motion_design",
+          "label": "Motion Design",
+          "facets": [
+            {
+              "id": "motion_structure",
+              "label": "Motion Structure",
+              "prompt": "Do blur, trails, streaks, repetition, stretch, or zoom effects form a coherent visible structure rather than undirected mush?"
+            },
+            {
+              "id": "directional_coherence",
+              "label": "Directional Coherence",
+              "prompt": "Do the direction, rhythm, acceleration, and spatial distribution of movement support the frame's composition and energy?"
+            },
+            {
+              "id": "layering_repetition",
+              "label": "Layering and Repetition",
+              "prompt": "Where present, do overlapping positions, repeated forms, flash echoes, or light layers create useful depth, rhythm, or visual relationships?"
+            }
+          ]
+        },
+        {
+          "id": "anchor_contrast",
+          "label": "Anchor and Contrast",
+          "facets": [
+            {
+              "id": "subject_anchor",
+              "label": "Subject Anchor",
+              "prompt": "When the image needs one, is there enough retained subject, gesture, face, silhouette, light, or shape to give the movement a meaningful anchor? Use N/A when complete abstraction is visibly the intended result."
+            },
+            {
+              "id": "motion_sharpness_contrast",
+              "label": "Motion-Sharpness Contrast",
+              "prompt": "Where retained sharpness or frozen detail is present, does its contrast with moving areas strengthen the image? Sharpness is not required and should not be rewarded merely for existing."
+            },
+            {
+              "id": "flash_freeze_integration",
+              "label": "Flash-Freeze Integration",
+              "prompt": "Where flash or another freezing mechanism is visible, is the frozen layer integrated coherently with ambient motion, trails, or repeated subject positions? Use N/A when no frozen layer is present."
+            }
+          ]
+        },
+        {
+          "id": "expressive_function",
+          "label": "Expressive Function",
+          "facets": [
+            {
+              "id": "energy_emotional_impact",
+              "label": "Energy and Emotional Impact",
+              "prompt": "Does the motion treatment communicate performance energy, atmosphere, tension, intimacy, chaos, humour, speed, or another clear emotional effect?"
+            },
+            {
+              "id": "movement_intentionality",
+              "label": "Movement Intentionality",
+              "prompt": "Does the movement appear deliberately directed, timed, or composed for this frame rather than simply caused by an uncontrolled slow exposure?"
+            },
+            {
+              "id": "distinctiveness",
+              "label": "Distinctiveness",
+              "prompt": "Does the motion treatment produce a memorable visual idea or relationship rather than a generic blur effect?"
+            }
+          ]
+        },
+        {
+          "id": "failure_control",
+          "label": "Failure Control",
+          "facets": [
+            {
+              "id": "intent_appropriate_legibility",
+              "label": "Intent-Appropriate Legibility",
+              "prompt": "Is the amount of recognisable subject or scene information appropriate to the photograph's visible intent, including cases where deliberate abstraction is the goal?"
+            },
+            {
+              "id": "uncontrolled_obstruction_control",
+              "label": "Uncontrolled Smear and Obstruction Control",
+              "prompt": "Are accidental smears, blocked subjects, dead areas, flash timing failures, or visual collisions controlled enough that the intended motion effect remains effective?"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
